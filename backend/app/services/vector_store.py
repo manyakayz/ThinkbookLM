@@ -23,9 +23,34 @@ def get_client() -> ClientAPI:
     return _client
 
 
-def get_collection() -> Collection:
+def get_collection(expected_dim: int | None = None) -> Collection:
+    """Return (or create) the thinkbook_chunks collection.
+
+    If *expected_dim* is supplied and the existing collection was built with a
+    different embedding dimension (e.g. dim-8 from the test suite), the stale
+    collection is deleted and recreated so the server never crashes with
+    ``InvalidDimensionException``.
+    """
     client = get_client()
-    return client.get_or_create_collection("thinkbook_chunks")
+    collection = client.get_or_create_collection("thinkbook_chunks")
+
+    if expected_dim is not None and collection.count() > 0:
+        # Peek at one vector to check its dimension
+        try:
+            sample = collection.peek(limit=1)
+            if sample["embeddings"] and len(sample["embeddings"][0]) != expected_dim:
+                logger.warning(
+                    "ChromaDB collection 'thinkbook_chunks' has dimension %d "
+                    "but embeddings have dimension %d — deleting and recreating.",
+                    len(sample["embeddings"][0]),
+                    expected_dim,
+                )
+                client.delete_collection("thinkbook_chunks")
+                collection = client.get_or_create_collection("thinkbook_chunks")
+        except Exception as exc:
+            logger.warning("Could not validate collection dimension: %s", exc)
+
+    return collection
 
 
 def make_vector_id(document_id: int, chunk_index: int) -> str:
@@ -52,7 +77,8 @@ def upsert_chunks(
     if not chunks:
         return 0
 
-    collection = get_collection()
+    dim = len(embeddings[0]) if embeddings else None
+    collection = get_collection(expected_dim=dim)
 
     ids = []
     documents = []

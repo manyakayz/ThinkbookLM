@@ -25,6 +25,7 @@ def insert_many(conn: Connection, document_id: int, chunks: list[dict]) -> int:
             VALUES (%(document_id)s, %(chunk_index)s, %(text)s, %(page_number)s, %(section)s, %(char_start)s, %(char_end)s)
             """,
             [{**c, "document_id": document_id} for c in chunks],
+            prepare=False,
         )
         return cur.rowcount
 
