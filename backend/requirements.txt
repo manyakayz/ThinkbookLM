@@ -1,0 +1,43 @@
+# --- Core web framework ---
+fastapi==0.115.6
+uvicorn[standard]==0.34.0
+
+# --- Configuration ---
+pydantic==2.10.4
+pydantic-settings==2.7.1
+
+# --- PostgreSQL (no ORM: raw psycopg3 driver + connection pool) ---
+psycopg[binary,pool]==3.2.3
+
+# --- Vector store (integration boundary only in this milestone) ---
+chromadb==0.5.23
+
+# --- HTTP client, used for the Ollama integration boundary ---
+httpx==0.28.1
+# --- Core web framework ---
+fastapi==0.115.6
+uvicorn[standard]==0.34.0
+
+# --- Configuration ---
+pydantic==2.10.4
+pydantic-settings==2.7.1
+
+# --- PostgreSQL (no ORM: raw psycopg3 driver + connection pool) ---
+psycopg[binary,pool]==3.2.3
+
+# --- Vector store (integration boundary only in this milestone) ---
+chromadb==0.5.23
+
+# --- HTTP client, used for the Ollama integration boundary ---
+httpx==0.28.1
+
+# --- File uploads (multipart/form-data parsing) ---
+python-multipart==0.0.20
+
+# --- Document text extraction (Milestone 1) ---
+pypdf==5.1.0
+python-docx==1.1.2
+
+# --- Testing ---
+pytest==8.3.4
+eval_type_backport==0.2.0
