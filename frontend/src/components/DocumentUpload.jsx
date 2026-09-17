@@ -1,6 +1,6 @@
 import { useState, useRef } from 'react';
 
-const API_BASE = 'http://localhost:8000';
+const API_BASE = '/api';
 
 export default function DocumentUpload({ notebookId, onUploadComplete }) {
   const [dragActive, setDragActive] = useState(false);

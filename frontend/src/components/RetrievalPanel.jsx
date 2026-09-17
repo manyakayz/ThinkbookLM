@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 
-const API_BASE = 'http://localhost:8000';
+const API_BASE = '/api';
 
 export default function RetrievalPanel({ notebookId }) {
   const [query, setQuery] = useState('');

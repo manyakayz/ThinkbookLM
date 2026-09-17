@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import DocumentUpload from './DocumentUpload';
 
-const API_BASE = 'http://localhost:8000';
+const API_BASE = '/api';
 
 export default function DocumentList({ notebookId }) {
   const [documents, setDocuments] = useState([]);
@@ -82,7 +82,7 @@ export default function DocumentList({ notebookId }) {
                 {doc.page_count && <span>{doc.page_count} pages</span>}
               </div>
               
-              <div style={{ marginTop: 'auto', paddingTop: '1rem' }}>
+              <div style={{ marginTop: 'auto', paddingTop: '1rem', display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
                 <span className={`status-badge status-${doc.processing_status}`}>
                   {doc.processing_status === 'pending' && '⏳'}
                   {doc.processing_status === 'processing' && '🔄'}
@@ -91,6 +91,18 @@ export default function DocumentList({ notebookId }) {
                   {' '}
                   {doc.processing_status.charAt(0).toUpperCase() + doc.processing_status.slice(1)}
                 </span>
+
+                {/* Indexing status — only show when processing completed */}
+                {doc.processing_status === 'completed' && (
+                  <span className={`status-badge status-idx-${doc.indexing_status}`}>
+                    {doc.indexing_status === 'pending'   && '🕐'}
+                    {doc.indexing_status === 'indexing'  && '🔄'}
+                    {doc.indexing_status === 'indexed'   && '🗂️'}
+                    {doc.indexing_status === 'failed'    && '⚠️'}
+                    {' '}
+                    {doc.indexing_status === 'indexed' ? 'Indexed' : doc.indexing_status.charAt(0).toUpperCase() + doc.indexing_status.slice(1)}
+                  </span>
+                )}
                 
                 {doc.error_message && (
                   <div className="error-msg" style={{ fontSize: '0.75rem', padding: '0.5rem' }}>

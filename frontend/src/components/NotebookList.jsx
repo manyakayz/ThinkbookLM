@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 
-const API_BASE = 'http://localhost:8000';
+const API_BASE = '/api';
 
 export default function NotebookList({ activeNotebook, onSelectNotebook }) {
   const [notebooks, setNotebooks] = useState([]);
@@ -10,6 +10,9 @@ export default function NotebookList({ activeNotebook, onSelectNotebook }) {
   const fetchNotebooks = async () => {
     try {
       const res = await fetch(`${API_BASE}/notebooks`);
+      if (!res.ok) {
+        throw new Error(`Failed to fetch notebooks: ${res.statusText}`);
+      }
       const data = await res.json();
       setNotebooks(data);
     } catch (e) {
@@ -33,6 +36,9 @@ export default function NotebookList({ activeNotebook, onSelectNotebook }) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ name: newNotebookName })
       });
+      if (!res.ok) {
+        throw new Error(`Failed to create notebook: ${res.statusText}`);
+      }
       const data = await res.json();
       setNotebooks([data, ...notebooks]);
       setNewNotebookName('');

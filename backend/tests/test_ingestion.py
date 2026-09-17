@@ -64,7 +64,7 @@ def test_txt_extraction(tmp_path):
     doc = txt_extractor.extract(test_file, "test.txt")
     assert doc.source_filename == "test.txt"
     assert len(doc.sections) == 1
-    assert doc.sections[0].text == "Hello World!\n\nThis is a test."
+    assert doc.sections[0].text.replace('\r\n', '\n') == "Hello World!\n\nThis is a test."
     assert doc.sections[0].page_number is None
 
 def test_invalid_document_handling():
