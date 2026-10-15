@@ -8,7 +8,7 @@ _COLUMNS = """
     id, notebook_id, original_filename, file_type, file_size,
     page_count, processing_status, error_message,
     indexing_status, indexing_error,
-    created_at, updated_at
+    created_at, updated_at, user_id
 """
 
 
@@ -20,44 +20,68 @@ def create(
     stored_filename: str,
     file_type: str,
     file_size: int,
+    user_id: int | None = None,
 ) -> Document:
     """Insert a new document row in `pending` status."""
     with conn.cursor(row_factory=class_row(Document)) as cur:
         cur.execute(
             f"""
             INSERT INTO documents
-                (notebook_id, original_filename, stored_filename, file_type, file_size, processing_status)
-            VALUES (%s, %s, %s, %s, %s, 'pending')
+                (notebook_id, original_filename, stored_filename, file_type, file_size, processing_status, user_id)
+            VALUES (%s, %s, %s, %s, %s, 'pending', %s)
             RETURNING {_COLUMNS}
             """,
-            (notebook_id, original_filename, stored_filename, file_type, file_size),
+            (notebook_id, original_filename, stored_filename, file_type, file_size, user_id),
         )
         return cur.fetchone()
 
 
-def list_for_notebook(conn: Connection, notebook_id: int) -> list[Document]:
+def list_for_notebook(conn: Connection, notebook_id: int, user_id: int | None = None) -> list[Document]:
     with conn.cursor(row_factory=class_row(Document)) as cur:
-        cur.execute(
-            f"""
-            SELECT {_COLUMNS}
-            FROM documents
-            WHERE notebook_id = %s
-            ORDER BY created_at DESC
-            """,
-            (notebook_id,),
-        )
+        if user_id is not None:
+            cur.execute(
+                f"""
+                SELECT {_COLUMNS}
+                FROM documents
+                WHERE notebook_id = %s AND user_id = %s
+                ORDER BY created_at DESC
+                """,
+                (notebook_id, user_id),
+            )
+        else:
+            cur.execute(
+                f"""
+                SELECT {_COLUMNS}
+                FROM documents
+                WHERE notebook_id = %s
+                ORDER BY created_at DESC
+                """,
+                (notebook_id,),
+            )
         return cur.fetchall()
 
 
-def get_by_id(conn: Connection, document_id: int) -> Document | None:
+def get_by_id(conn: Connection, document_id: int, user_id: int | None = None) -> Document | None:
     with conn.cursor(row_factory=class_row(Document)) as cur:
-        cur.execute(f"SELECT {_COLUMNS} FROM documents WHERE id = %s", (document_id,))
+        if user_id is not None:
+            cur.execute(
+                f"SELECT {_COLUMNS} FROM documents WHERE id = %s AND user_id = %s",
+                (document_id, user_id),
+            )
+        else:
+            cur.execute(
+                f"SELECT {_COLUMNS} FROM documents WHERE id = %s",
+                (document_id,),
+            )
         return cur.fetchone()
 
 
-def get_stored_filename(conn: Connection, document_id: int) -> str | None:
+def get_stored_filename(conn: Connection, document_id: int, user_id: int | None = None) -> str | None:
     with conn.cursor() as cur:
-        cur.execute("SELECT stored_filename FROM documents WHERE id = %s", (document_id,))
+        if user_id is not None:
+            cur.execute("SELECT stored_filename FROM documents WHERE id = %s AND user_id = %s", (document_id, user_id))
+        else:
+            cur.execute("SELECT stored_filename FROM documents WHERE id = %s", (document_id,))
         row = cur.fetchone()
         return row[0] if row else None
 
@@ -139,9 +163,11 @@ def mark_index_failed(conn: Connection, document_id: int, *, error_message: str)
         return cur.fetchone()
 
 
-def list_ids_for_notebook(conn: Connection, notebook_id: int) -> list[int]:
+def list_ids_for_notebook(conn: Connection, notebook_id: int, user_id: int | None = None) -> list[int]:
     """Return all document IDs belonging to a notebook (used for scope filtering)."""
     with conn.cursor() as cur:
-        cur.execute("SELECT id FROM documents WHERE notebook_id = %s", (notebook_id,))
+        if user_id is not None:
+            cur.execute("SELECT id FROM documents WHERE notebook_id = %s AND user_id = %s", (notebook_id, user_id))
+        else:
+            cur.execute("SELECT id FROM documents WHERE notebook_id = %s", (notebook_id,))
         return [row[0] for row in cur.fetchall()]
-

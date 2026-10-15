@@ -42,6 +42,7 @@ def retrieve(
     notebook_id: int,
     document_ids: list[int],
     top_k: int,
+    user_id: int | None = None,
 ) -> list[RetrievalResult]:
     """Run a semantic search and return enriched results.
 
@@ -51,6 +52,7 @@ def retrieve(
         document_ids: Further restrict to these specific documents.
                       Empty list = search all documents in the notebook.
         top_k:        Maximum number of results to return.
+        user_id:      Owner of the notebook and documents.
 
     Returns:
         List of RetrievalResult sorted by ascending cosine distance.
@@ -64,7 +66,7 @@ def retrieve(
     # --- Resolve scope: if document_ids provided, validate they belong to notebook ---
     if document_ids:
         with pool.connection() as conn:
-            notebook_doc_ids = set(documents_repo.list_ids_for_notebook(conn, notebook_id))
+            notebook_doc_ids = set(documents_repo.list_ids_for_notebook(conn, notebook_id, user_id=user_id))
         invalid = [did for did in document_ids if did not in notebook_doc_ids]
         if invalid:
             raise RetrievalError(
@@ -72,19 +74,20 @@ def retrieve(
             )
 
     # --- Embed the query ---
-    logger.info("Embedding query for notebook=%d top_k=%d", notebook_id, top_k)
+    logger.info("Embedding query for notebook=%d top_k=%d user_id=%s", notebook_id, top_k, user_id)
     query_embedding = embedding.embed_query(query)
 
     # --- Query ChromaDB ---
     logger.info(
-        "Querying ChromaDB — notebook=%d doc_ids=%s top_k=%d",
-        notebook_id, document_ids or "all", top_k,
+        "Querying ChromaDB — notebook=%d doc_ids=%s top_k=%d user_id=%s",
+        notebook_id, document_ids or "all", top_k, user_id,
     )
     raw = vector_store.query(
         embedding=query_embedding,
         notebook_id=notebook_id,
         document_ids=document_ids,
         top_k=top_k,
+        user_id=user_id,
     )
 
     # ChromaDB returns lists-of-lists (one per query_embedding)
@@ -105,9 +108,9 @@ def retrieve(
         pg_chunks = chunks_repo.get_by_ids(conn, pg_chunk_ids)
         pg_chunk_map = {c.id: c for c in pg_chunks}
 
-        # Also need document names
+        # Also need document names (scoped to user)
         doc_ids_needed = list({int(m["document_id"]) for m in metadatas})
-        docs = [documents_repo.get_by_id(conn, did) for did in doc_ids_needed]
+        docs = [documents_repo.get_by_id(conn, did, user_id=user_id) for did in doc_ids_needed]
         doc_map = {d.id: d for d in docs if d is not None}
 
     # --- Build structured results ---

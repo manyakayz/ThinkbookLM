@@ -32,6 +32,12 @@ class Settings(BaseSettings):
     # --- PostgreSQL ---
     postgres_dsn: str = "postgresql://thinkbook:thinkbook@localhost:5432/thinkbook_lm"
 
+    # --- Authentication & Sessions ---
+    session_secret_key: str = "thinkbook-local-dev-secret-key-change-in-production-2026"
+    session_cookie_name: str = "thinkbook_session"
+    session_max_age_days: int = 7
+    csrf_cookie_name: str = "thinkbook_csrf"
+
     # --- ChromaDB ---
     chroma_persist_dir: str = "./data/chroma"
 
@@ -73,6 +79,14 @@ class Settings(BaseSettings):
     @property
     def cors_origins_list(self) -> list[str]:
         return [origin.strip() for origin in self.cors_origins.split(",") if origin.strip()]
+
+    @property
+    def session_max_age_seconds(self) -> int:
+        return self.session_max_age_days * 86400
+
+    @property
+    def cookie_secure(self) -> bool:
+        return self.app_env.lower() == "production"
 
 
 @lru_cache

@@ -24,4 +24,5 @@ class Notebook(BaseModel):
     created_at: datetime
     updated_at: datetime
     document_count: int = 0
+    user_id: int | None = None
 

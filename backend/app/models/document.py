@@ -28,6 +28,7 @@ class Document(BaseModel):
     indexing_error: str | None
     created_at: datetime
     updated_at: datetime
+    user_id: int | None = None
 
 
 class DocumentUploadResult(BaseModel):

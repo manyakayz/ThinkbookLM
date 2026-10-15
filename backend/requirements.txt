@@ -9,6 +9,9 @@ pydantic-settings==2.7.1
 # --- PostgreSQL (no ORM: raw psycopg3 driver + connection pool) ---
 psycopg[binary,pool]==3.2.3
 
+# --- Authentication & Password Hashing ---
+argon2-cffi==25.1.0
+
 # --- Vector store (integration boundary only in this milestone) ---
 chromadb==0.5.23
 

@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect } from 'react';
+import { useAuth } from '../context/AuthContext';
 
 export default function Navbar({
   notebooks = [],
@@ -6,16 +7,31 @@ export default function Navbar({
   onSelectNotebook,
   onCreateNotebook,
 }) {
+  const { user, logout } = useAuth();
   const [dropdownOpen, setDropdownOpen] = useState(false);
+  const [profileOpen, setProfileOpen] = useState(false);
   const dropdownRef = useRef(null);
+  const profileRef = useRef(null);
 
   const currentNotebook = notebooks.find((n) => n.id === activeNotebook);
   const currentTitle = currentNotebook ? currentNotebook.name : 'Untitled notebook';
+
+  const getInitials = (name) => {
+    if (!name) return 'U';
+    const parts = name.trim().split(/\s+/);
+    if (parts.length >= 2) {
+      return (parts[0][0] + parts[1][0]).toUpperCase();
+    }
+    return name.slice(0, 2).toUpperCase();
+  };
 
   useEffect(() => {
     function handleClickOutside(e) {
       if (dropdownRef.current && !dropdownRef.current.contains(e.target)) {
         setDropdownOpen(false);
+      }
+      if (profileRef.current && !profileRef.current.contains(e.target)) {
+        setProfileOpen(false);
       }
     }
     document.addEventListener('mousedown', handleClickOutside);
@@ -268,24 +284,132 @@ export default function Navbar({
           </svg>
         </button>
 
-        {/* User avatar badge */}
-        <div
-          style={{
-            width: '32px',
-            height: '32px',
-            borderRadius: '50%',
-            backgroundColor: '#c2410c',
-            color: '#ffffff',
-            fontWeight: 600,
-            fontSize: '0.9rem',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            cursor: 'pointer',
-          }}
-          title="Google Account"
-        >
-          B
+        {/* User profile avatar & dropdown */}
+        <div ref={profileRef} style={{ position: 'relative' }}>
+          <button
+            onClick={() => setProfileOpen(!profileOpen)}
+            style={{
+              width: '32px',
+              height: '32px',
+              borderRadius: '50%',
+              backgroundColor: '#1b3a6b',
+              color: 'var(--accent-blue)',
+              border: '1px solid rgba(168, 199, 250, 0.4)',
+              fontWeight: 600,
+              fontSize: '0.85rem',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              cursor: 'pointer',
+              transition: 'transform 0.15s ease, box-shadow 0.15s ease',
+            }}
+            title={user ? `${user.full_name} (${user.email})` : 'Account'}
+            onMouseEnter={(e) => (e.currentTarget.style.boxShadow = '0 0 0 2px rgba(168, 199, 250, 0.35)')}
+            onMouseLeave={(e) => (e.currentTarget.style.boxShadow = 'none')}
+          >
+            {getInitials(user?.full_name)}
+          </button>
+
+          {profileOpen && (
+            <div
+              className="animate-fade-in"
+              style={{
+                position: 'absolute',
+                top: '100%',
+                right: 0,
+                marginTop: '8px',
+                width: '280px',
+                backgroundColor: 'var(--bg-card)',
+                border: '1px solid var(--border-subtle)',
+                borderRadius: '16px',
+                boxShadow: '0 12px 36px rgba(0, 0, 0, 0.55)',
+                padding: '16px',
+                zIndex: 1000,
+              }}
+            >
+              {/* Profile Card Header */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '14px' }}>
+                <div
+                  style={{
+                    width: '44px',
+                    height: '44px',
+                    borderRadius: '50%',
+                    backgroundColor: '#1b3a6b',
+                    color: 'var(--accent-blue)',
+                    border: '1px solid rgba(168, 199, 250, 0.4)',
+                    fontWeight: 600,
+                    fontSize: '1.1rem',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    flexShrink: 0,
+                  }}
+                >
+                  {getInitials(user?.full_name)}
+                </div>
+                <div style={{ overflow: 'hidden' }}>
+                  <div style={{ fontWeight: 600, color: 'var(--text-primary)', fontSize: '0.95rem', textOverflow: 'ellipsis', overflow: 'hidden', whiteSpace: 'nowrap' }}>
+                    {user?.full_name || 'User'}
+                  </div>
+                  <div style={{ color: 'var(--text-secondary)', fontSize: '0.8rem', textOverflow: 'ellipsis', overflow: 'hidden', whiteSpace: 'nowrap' }}>
+                    {user?.email || ''}
+                  </div>
+                </div>
+              </div>
+
+              {/* Status pill */}
+              <div
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  backgroundColor: 'rgba(74, 222, 128, 0.1)',
+                  border: '1px solid rgba(74, 222, 128, 0.25)',
+                  borderRadius: '9999px',
+                  padding: '3px 10px',
+                  fontSize: '0.75rem',
+                  color: '#4ade80',
+                  marginBottom: '14px',
+                }}
+              >
+                <span style={{ width: '6px', height: '6px', borderRadius: '50%', backgroundColor: '#4ade80' }}></span>
+                <span>Active Session</span>
+              </div>
+
+              <div style={{ borderTop: '1px solid var(--border-subtle)', paddingTop: '10px' }}>
+                <button
+                  onClick={() => {
+                    setProfileOpen(false);
+                    logout();
+                  }}
+                  style={{
+                    width: '100%',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '10px',
+                    padding: '10px 12px',
+                    borderRadius: '10px',
+                    backgroundColor: 'rgba(239, 68, 68, 0.08)',
+                    border: '1px solid rgba(239, 68, 68, 0.2)',
+                    color: '#f87171',
+                    fontSize: '0.88rem',
+                    fontWeight: 500,
+                    cursor: 'pointer',
+                    transition: 'background-color 0.15s ease',
+                  }}
+                  onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = 'rgba(239, 68, 68, 0.16)')}
+                  onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = 'rgba(239, 68, 68, 0.08)')}
+                >
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
+                    <polyline points="16 17 21 12 16 7" />
+                    <line x1="21" y1="12" x2="9" y2="12" />
+                  </svg>
+                  <span>Sign out</span>
+                </button>
+              </div>
+            </div>
+          )}
         </div>
       </div>
     </header>

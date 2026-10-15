@@ -66,6 +66,17 @@ def ping() -> tuple[bool, str | None]:
         return False, str(e)
 
 
+def _combine_where_clauses(clauses: list[dict[str, Any]]) -> dict[str, Any]:
+    if not clauses:
+        return {}
+    if len(clauses) == 1:
+        return clauses[0]
+    res = clauses[0]
+    for c in clauses[1:]:
+        res = {"$and": [res, c]}
+    return res
+
+
 def upsert_chunks(
     document_id: int,
     notebook_id: int,
@@ -73,6 +84,7 @@ def upsert_chunks(
     file_type: str,
     chunks: list[dict],
     embeddings: list[list[float]],
+    user_id: int | None = None,
 ) -> int:
     if not chunks:
         return 0
@@ -92,6 +104,7 @@ def upsert_chunks(
                 "document_id": document_id,
                 "chunk_id": chunk["id"],
                 "notebook_id": notebook_id,
+                "user_id": user_id if user_id is not None else -1,
                 "chunk_index": chunk["chunk_index"],
                 "source_filename": source_filename,
                 "file_type": file_type,
@@ -120,6 +133,7 @@ def query(
     notebook_id: int,
     document_ids: list[int],
     top_k: int,
+    user_id: int | None = None,
 ) -> dict[str, Any]:
     collection = get_collection()
     
@@ -127,23 +141,17 @@ def query(
     if collection.count() == 0:
         return {"ids": [[]], "distances": [[]], "metadatas": [[]], "documents": [[]]}
 
-    where_clause: dict[str, Any] = {"notebook_id": notebook_id}
+    clauses: list[dict[str, Any]] = [{"notebook_id": notebook_id}]
+    if user_id is not None:
+        clauses.append({"user_id": user_id})
 
     if document_ids:
         if len(document_ids) == 1:
-            where_clause = {
-                "$and": [
-                    {"notebook_id": notebook_id},
-                    {"document_id": document_ids[0]},
-                ]
-            }
+            clauses.append({"document_id": document_ids[0]})
         else:
-            where_clause = {
-                "$and": [
-                    {"notebook_id": notebook_id},
-                    {"document_id": {"$in": document_ids}},
-                ]
-            }
+            clauses.append({"document_id": {"$in": document_ids}})
+
+    where_clause = _combine_where_clauses(clauses)
 
     results = collection.query(
         query_embeddings=[embedding],

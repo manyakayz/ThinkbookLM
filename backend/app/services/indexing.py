@@ -105,6 +105,7 @@ def index_document(document_id: int) -> int:
             file_type=document.file_type,
             chunks=chunk_dicts,
             embeddings=embeddings,
+            user_id=document.user_id,
         )
         index_elapsed = time.monotonic() - t1
 
