@@ -132,3 +132,36 @@ export async function getMeApi() {
   setCsrfToken(data.csrf_token);
   return data;
 }
+
+export async function chatRagApi({
+  message,
+  notebookId,
+  documentIds = [],
+  history = [],
+  topK = 5,
+  temperature = 0.3,
+}) {
+  const payload = {
+    message,
+    notebook_id: notebookId,
+    document_ids: documentIds,
+    history,
+    top_k: topK,
+    temperature,
+  };
+
+  const res = await apiFetch('/api/chat/rag', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    const errorMsg = data.detail || `Server error (${res.status})`;
+    throw new Error(errorMsg);
+  }
+
+  return data;
+}
+

@@ -1,6 +1,5 @@
 import { useState, useRef, useEffect } from 'react';
-
-const API_BASE = '/api';
+import { chatRagApi } from '../api/client';
 
 export default function ChatPanel({
   notebookId,
@@ -11,7 +10,9 @@ export default function ChatPanel({
   const [loading, setLoading] = useState(false);
   const [messages, setMessages] = useState([]);
   const [topK, setTopK] = useState(5);
+  const [temperature, setTemperature] = useState(0.3);
   const [showSettings, setShowSettings] = useState(false);
+  const [expandedSources, setExpandedSources] = useState({});
   const messagesEndRef = useRef(null);
 
   const scrollToBottom = () => {
@@ -22,9 +23,22 @@ export default function ChatPanel({
     scrollToBottom();
   }, [messages, loading]);
 
+  // Reset chat thread when switching notebooks to ensure frontend data isolation
+  useEffect(() => {
+    setMessages([]);
+    setExpandedSources({});
+  }, [notebookId]);
+
+  const toggleSources = (msgId) => {
+    setExpandedSources((prev) => ({
+      ...prev,
+      [msgId]: !prev[msgId],
+    }));
+  };
+
   const handleSend = async (queryText) => {
     const textToSend = (queryText || query).trim();
-    if (!textToSend) return;
+    if (!textToSend || loading) return;
     if (!notebookId) {
       alert('Please select or create a notebook first.');
       return;
@@ -37,44 +51,47 @@ export default function ChatPanel({
       timestamp: new Date(),
     };
 
+    // Build multi-turn history from previous turns
+    const history = messages
+      .filter((m) => !m.error && (m.sender === 'user' || m.sender === 'assistant'))
+      .map((m) => ({
+        role: m.sender === 'user' ? 'user' : 'assistant',
+        content: m.sender === 'user' ? m.text : (m.answer || ''),
+      }));
+
     setMessages((prev) => [...prev, userMessage]);
     setQuery('');
     setLoading(true);
 
     try {
-      const res = await fetch(`${API_BASE}/retrieve`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          query: textToSend,
-          notebook_id: notebookId,
-          document_ids: selectedDocIds,
-          top_k: topK,
-        }),
+      const data = await chatRagApi({
+        message: textToSend,
+        notebookId,
+        documentIds: selectedDocIds,
+        history,
+        topK,
+        temperature,
       });
-
-      const data = await res.json();
-      if (!res.ok) {
-        throw new Error(data.detail || 'Failed to retrieve information');
-      }
 
       const botMessage = {
         id: Date.now() + 1,
         sender: 'assistant',
-        query: textToSend,
-        results: data.results || [],
+        answer: data.answer,
+        sources: data.sources || [],
+        grounded: Boolean(data.grounded),
+        retrievedCount: data.retrieved_count || 0,
+        model: data.model || 'qwen3:1.7b',
         timestamp: new Date(),
       };
 
       setMessages((prev) => [...prev, botMessage]);
     } catch (err) {
-      setError(err.message);
       setMessages((prev) => [
         ...prev,
         {
           id: Date.now() + 1,
           sender: 'assistant',
-          error: err.message,
+          error: err.message || 'Failed to generate answer from local assistant.',
           timestamp: new Date(),
         },
       ]);
@@ -89,13 +106,28 @@ export default function ChatPanel({
     <main className="nlm-panel animate-fade-in" style={{ padding: '0 0 12px 0' }}>
       {/* Header */}
       <div className="nlm-panel-header" style={{ padding: '0 16px', borderBottom: '1px solid var(--border-subtle)' }}>
-        <h2 className="nlm-panel-title">Chat</h2>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <h2 className="nlm-panel-title">Chat</h2>
+          <span
+            style={{
+              fontSize: '0.72rem',
+              color: 'var(--text-secondary)',
+              backgroundColor: 'rgba(255, 255, 255, 0.05)',
+              padding: '2px 8px',
+              borderRadius: '9999px',
+              border: '1px solid var(--border-subtle)',
+            }}
+          >
+            Qwen3 1.7B • RAG
+          </span>
+        </div>
+
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px', position: 'relative' }}>
-          {/* Tune / Settings Icon for Top-K */}
+          {/* Settings Toggle Button */}
           <button
             onClick={() => setShowSettings(!showSettings)}
             style={{
-              background: 'transparent',
+              background: showSettings ? 'rgba(255, 255, 255, 0.08)' : 'transparent',
               border: 'none',
               color: 'var(--text-secondary)',
               cursor: 'pointer',
@@ -104,9 +136,11 @@ export default function ChatPanel({
               display: 'flex',
               alignItems: 'center',
             }}
-            title="Retrieval Settings (Top-K)"
+            title="RAG Generation & Retrieval Settings"
             onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.08)')}
-            onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = 'transparent')}
+            onMouseLeave={(e) => {
+              if (!showSettings) e.currentTarget.style.backgroundColor = 'transparent';
+            }}
           >
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <line x1="4" y1="21" x2="4" y2="14" />
@@ -121,7 +155,7 @@ export default function ChatPanel({
             </svg>
           </button>
 
-          {/* Top-K Dropdown Popup */}
+          {/* Settings Popover */}
           {showSettings && (
             <div
               className="animate-fade-in"
@@ -130,57 +164,54 @@ export default function ChatPanel({
                 top: '100%',
                 right: 0,
                 marginTop: '6px',
-                width: '200px',
+                width: '230px',
                 background: 'var(--bg-card)',
                 border: '1px solid var(--border-subtle)',
                 borderRadius: '12px',
                 boxShadow: '0 8px 24px rgba(0, 0, 0, 0.5)',
-                padding: '12px',
+                padding: '14px',
                 zIndex: 100,
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '12px',
               }}
             >
-              <div style={{ fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: '8px' }}>
-                Top-K Chunks: {topK}
+              <div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-primary)', marginBottom: '6px' }}>
+                  <span>Top-K Sources</span>
+                  <span style={{ color: 'var(--accent-blue)' }}>{topK}</span>
+                </div>
+                <input
+                  type="range"
+                  min="1"
+                  max="10"
+                  value={topK}
+                  onChange={(e) => setTopK(Number(e.target.value))}
+                  style={{ width: '100%', accentColor: 'var(--accent-blue)' }}
+                />
               </div>
-              <input
-                type="range"
-                min="1"
-                max="20"
-                value={topK}
-                onChange={(e) => setTopK(Number(e.target.value))}
-                style={{ width: '100%', accentColor: 'var(--accent-blue)' }}
-              />
-              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.72rem', color: 'var(--text-secondary)', marginTop: '4px' }}>
-                <span>1</span>
-                <span>5</span>
-                <span>10</span>
-                <span>20</span>
+
+              <div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-primary)', marginBottom: '6px' }}>
+                  <span>Temperature</span>
+                  <span style={{ color: 'var(--accent-blue)' }}>{temperature}</span>
+                </div>
+                <input
+                  type="range"
+                  min="0"
+                  max="1"
+                  step="0.1"
+                  value={temperature}
+                  onChange={(e) => setTemperature(Number(e.target.value))}
+                  style={{ width: '100%', accentColor: 'var(--accent-blue)' }}
+                />
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.7rem', color: 'var(--text-muted)', marginTop: '2px' }}>
+                  <span>Factual (0.0)</span>
+                  <span>Creative (1.0)</span>
+                </div>
               </div>
             </div>
           )}
-
-          {/* 3 Dots Menu */}
-          <button
-            style={{
-              background: 'transparent',
-              border: 'none',
-              color: 'var(--text-secondary)',
-              cursor: 'pointer',
-              padding: '6px',
-              borderRadius: '6px',
-              display: 'flex',
-              alignItems: 'center',
-            }}
-            title="More options"
-            onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.08)')}
-            onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = 'transparent')}
-          >
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-              <circle cx="12" cy="12" r="1" />
-              <circle cx="12" cy="5" r="1" />
-              <circle cx="12" cy="19" r="1" />
-            </svg>
-          </button>
         </div>
       </div>
 
@@ -195,7 +226,7 @@ export default function ChatPanel({
         }}
       >
         {messages.length === 0 ? (
-          /* Empty / Welcome State (Exact match to Google NotebookLM screenshot) */
+          /* Empty / Welcome State */
           <div
             style={{
               margin: 'auto 0',
@@ -206,12 +237,10 @@ export default function ChatPanel({
               padding: '20px 0',
             }}
           >
-            {/* Waving Hand 👋 */}
             <div style={{ fontSize: '3rem', marginBottom: '20px', lineHeight: 1 }}>
               👋
             </div>
 
-            {/* Title */}
             <h1
               style={{
                 fontSize: '2.1rem',
@@ -221,10 +250,9 @@ export default function ChatPanel({
                 marginBottom: '16px',
               }}
             >
-              Let's start your notebook...
+              Let's start your research...
             </h1>
 
-            {/* Subtitle */}
             <p
               style={{
                 fontSize: '0.96rem',
@@ -233,10 +261,9 @@ export default function ChatPanel({
                 marginBottom: '32px',
               }}
             >
-              This is your blank canvas to understand, create, or make progress on something new. I can help you get started or you can go ahead and add your own sources.
+              Ask questions grounded directly in your uploaded notebook documents. The assistant retrieves relevant evidence and provides authentic source citations.
             </p>
 
-            {/* Heading for Suggestions */}
             <div
               style={{
                 fontSize: '0.9rem',
@@ -245,10 +272,9 @@ export default function ChatPanel({
                 marginBottom: '14px',
               }}
             >
-              What would you like this notebook to help you do?
+              Suggested prompts:
             </div>
 
-            {/* Suggestion Pills */}
             <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', alignItems: 'flex-start' }}>
               <button
                 className="nlm-pill-btn"
@@ -258,9 +284,9 @@ export default function ChatPanel({
                   backgroundColor: 'var(--bg-card)',
                   border: '1px solid var(--border-subtle)',
                 }}
-                onClick={() => handleSend('Explain the core concepts and summarize the main takeaways')}
+                onClick={() => handleSend('Summarize the key findings and main ideas from my documents')}
               >
-                Learn about a new topic
+                Summarize the key findings from these documents
               </button>
 
               <button
@@ -271,9 +297,9 @@ export default function ChatPanel({
                   backgroundColor: 'var(--bg-card)',
                   border: '1px solid var(--border-subtle)',
                 }}
-                onClick={() => handleSend('Generate creative ideas and outline a comprehensive draft')}
+                onClick={() => handleSend('What are the main topics and concepts discussed across the sources?')}
               >
-                Create something new
+                What are the core concepts covered?
               </button>
 
               <button
@@ -284,15 +310,15 @@ export default function ChatPanel({
                   backgroundColor: 'var(--bg-card)',
                   border: '1px solid var(--border-subtle)',
                 }}
-                onClick={() => handleSend('Extract action items and key milestones from these sources')}
+                onClick={() => handleSend('Extract important dates, figures, and factual claims')}
               >
-                Make progress on a project
+                Extract key facts, dates, and figures
               </button>
             </div>
           </div>
         ) : (
           /* Conversation Thread */
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '20px', width: '100%', maxWidth: '800px', margin: '0 auto' }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '20px', width: '100%', maxWidth: '820px', margin: '0 auto' }}>
             {messages.map((m) => (
               <div key={m.id} style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
                 {m.sender === 'user' ? (
@@ -313,7 +339,7 @@ export default function ChatPanel({
                     {m.text}
                   </div>
                 ) : (
-                  /* Assistant / Retrieval Response */
+                  /* Assistant Response */
                   <div
                     style={{
                       alignSelf: 'flex-start',
@@ -324,97 +350,143 @@ export default function ChatPanel({
                     }}
                   >
                     {m.error ? (
+                      /* Error Message */
                       <div
                         style={{
-                          padding: '12px 16px',
-                          backgroundColor: 'rgba(239, 68, 68, 0.1)',
+                          padding: '14px 16px',
+                          backgroundColor: 'rgba(239, 68, 68, 0.08)',
                           border: '1px solid rgba(239, 68, 68, 0.25)',
                           borderRadius: '12px',
                           color: '#f87171',
                           fontSize: '0.88rem',
+                          display: 'flex',
+                          alignItems: 'flex-start',
+                          gap: '10px',
                         }}
                       >
-                        ⚠️ {m.error}
+                        <span style={{ fontSize: '1.2rem', lineHeight: 1 }}>⚠️</span>
+                        <div style={{ flex: 1 }}>
+                          <div style={{ fontWeight: 600, marginBottom: '2px' }}>Request Failed</div>
+                          <div>{m.error}</div>
+                        </div>
                       </div>
                     ) : (
-                      <>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.85rem', color: 'var(--text-secondary)' }}>
-                          <span style={{ fontSize: '1.1rem' }}>✨</span>
-                          <span>Found {m.results.length} relevant source chunks</span>
-                        </div>
-
-                        {m.results.length === 0 ? (
-                          <div
-                            style={{
-                              padding: '16px',
-                              backgroundColor: 'var(--bg-panel-subtle)',
-                              borderRadius: '12px',
-                              color: 'var(--text-secondary)',
-                              fontSize: '0.88rem',
-                              border: '1px solid var(--border-subtle)',
-                            }}
-                          >
-                            No matching chunks found in the selected sources. Try adding more documents or adjusting your query.
-                          </div>
-                        ) : (
-                          <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                            {m.results.map((r, i) => (
-                              <div
-                                key={r.vector_id || i}
-                                style={{
-                                  backgroundColor: 'var(--bg-card)',
-                                  borderRadius: '12px',
-                                  padding: '14px',
-                                  border: '1px solid var(--border-subtle)',
-                                  display: 'flex',
-                                  flexDirection: 'column',
-                                  gap: '8px',
-                                }}
-                              >
-                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '6px' }}>
-                                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.82rem', fontWeight: 600, color: 'var(--text-primary)' }}>
-                                    <span style={{ color: 'var(--accent-blue)' }}>#{i + 1}</span>
-                                    <span>{r.document_name}</span>
-                                    <span style={{ color: 'var(--text-secondary)', fontWeight: 400 }}>({r.file_type})</span>
-                                  </div>
-
-                                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
-                                    {r.page_number && <span>Page {r.page_number}</span>}
-                                    {r.section && <span>• {r.section}</span>}
-                                    <span
-                                      style={{
-                                        backgroundColor: 'rgba(168, 199, 250, 0.12)',
-                                        color: 'var(--accent-blue)',
-                                        padding: '2px 6px',
-                                        borderRadius: '4px',
-                                        fontWeight: 500,
-                                      }}
-                                    >
-                                      distance: {r.distance.toFixed(3)}
-                                    </span>
-                                  </div>
-                                </div>
-
-                                <div
-                                  style={{
-                                    fontSize: '0.88rem',
-                                    lineHeight: 1.6,
-                                    color: 'var(--text-primary)',
-                                    backgroundColor: 'rgba(0, 0, 0, 0.25)',
-                                    padding: '10px 12px',
-                                    borderRadius: '8px',
-                                    borderLeft: '3px solid var(--accent-blue)',
-                                    fontFamily: 'inherit',
-                                    whiteSpace: 'pre-wrap',
-                                  }}
-                                >
-                                  {r.text}
-                                </div>
-                              </div>
-                            ))}
+                      <div
+                        style={{
+                          backgroundColor: 'var(--bg-panel-subtle)',
+                          borderRadius: '16px',
+                          padding: '18px',
+                          border: '1px solid var(--border-subtle)',
+                          display: 'flex',
+                          flexDirection: 'column',
+                          gap: '14px',
+                        }}
+                      >
+                        {/* Grounding Status Header */}
+                        {m.grounded && (
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.84rem', color: 'var(--accent-blue)' }}>
+                            <span style={{ fontSize: '1.1rem' }}>✨</span>
+                            <span style={{ fontWeight: 600 }}>Grounded Answer</span>
+                            {m.sources && m.sources.length > 0 && (
+                              <span style={{ color: 'var(--text-secondary)', fontSize: '0.78rem' }}>
+                                ({m.sources.length} {m.sources.length === 1 ? 'source cited' : 'sources cited'})
+                              </span>
+                            )}
                           </div>
                         )}
-                      </>
+
+                        {/* Answer Text */}
+                        <div
+                          style={{
+                            fontSize: '0.94rem',
+                            lineHeight: 1.65,
+                            color: 'var(--text-primary)',
+                            whiteSpace: 'pre-wrap',
+                            wordBreak: 'break-word',
+                          }}
+                        >
+                          {m.answer}
+                        </div>
+
+                        {/* Verified Sources / Citations Block */}
+                        {m.sources && m.sources.length > 0 && (
+                          <div style={{ marginTop: '4px', borderTop: '1px solid var(--border-subtle)', paddingTop: '12px' }}>
+                            <button
+                              onClick={() => toggleSources(m.id)}
+                              style={{
+                                background: 'transparent',
+                                border: 'none',
+                                color: 'var(--accent-blue)',
+                                fontSize: '0.82rem',
+                                fontWeight: 600,
+                                cursor: 'pointer',
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: '6px',
+                                padding: '4px 0',
+                              }}
+                            >
+                              <span>{expandedSources[m.id] ? '▾' : '▸'}</span>
+                              <span>Verified Source References ({m.sources.length})</span>
+                            </button>
+
+                            {/* Expanded Source Details */}
+                            {expandedSources[m.id] && (
+                              <div className="animate-fade-in" style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginTop: '10px' }}>
+                                {m.sources.map((s, idx) => (
+                                  <div
+                                    key={s.chunk_id || idx}
+                                    style={{
+                                      backgroundColor: 'var(--bg-card)',
+                                      borderRadius: '8px',
+                                      padding: '10px 12px',
+                                      border: '1px solid var(--border-subtle)',
+                                      display: 'flex',
+                                      justifyContent: 'space-between',
+                                      alignItems: 'center',
+                                      flexWrap: 'wrap',
+                                      gap: '8px',
+                                    }}
+                                  >
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.84rem' }}>
+                                      <span style={{ color: 'var(--accent-blue)', fontWeight: 600 }}>#{idx + 1}</span>
+                                      <span style={{ color: 'var(--text-primary)', fontWeight: 500 }}>{s.document_name}</span>
+                                    </div>
+
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.76rem', color: 'var(--text-secondary)' }}>
+                                      {s.page_number !== null && s.page_number !== undefined && (
+                                        <span style={{ backgroundColor: 'rgba(255, 255, 255, 0.05)', padding: '2px 6px', borderRadius: '4px' }}>
+                                          Page {s.page_number}
+                                        </span>
+                                      )}
+                                      {s.section && (
+                                        <span style={{ backgroundColor: 'rgba(255, 255, 255, 0.05)', padding: '2px 6px', borderRadius: '4px' }}>
+                                          {s.section}
+                                        </span>
+                                      )}
+                                      <span style={{ backgroundColor: 'rgba(255, 255, 255, 0.05)', padding: '2px 6px', borderRadius: '4px' }}>
+                                        Chunk #{s.chunk_index + 1}
+                                      </span>
+                                      <span
+                                        style={{
+                                          backgroundColor: 'rgba(168, 199, 250, 0.12)',
+                                          color: 'var(--accent-blue)',
+                                          padding: '2px 6px',
+                                          borderRadius: '4px',
+                                          fontWeight: 500,
+                                        }}
+                                        title="Cosine distance (lower is closer)"
+                                      >
+                                        dist: {s.distance.toFixed(3)}
+                                      </span>
+                                    </div>
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                        )}
+                      </div>
                     )}
                   </div>
                 )}
@@ -422,9 +494,27 @@ export default function ChatPanel({
             ))}
 
             {loading && (
-              <div style={{ display: 'flex', alignItems: 'center', gap: '10px', color: 'var(--text-secondary)', fontSize: '0.88rem' }}>
-                <span style={{ animation: 'spin 1.5s linear infinite', display: 'inline-block' }}>✨</span>
-                <span>Searching source chunks...</span>
+              <div
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '10px',
+                  color: 'var(--text-secondary)',
+                  fontSize: '0.88rem',
+                  padding: '8px 0',
+                }}
+              >
+                <div
+                  style={{
+                    width: '16px',
+                    height: '16px',
+                    borderRadius: '50%',
+                    border: '2px solid var(--accent-blue)',
+                    borderTopColor: 'transparent',
+                    animation: 'spin 0.8s linear infinite',
+                  }}
+                />
+                <span>Retrieving document evidence & generating answer with Qwen3...</span>
               </div>
             )}
             <div ref={messagesEndRef} />
@@ -432,7 +522,7 @@ export default function ChatPanel({
         )}
       </div>
 
-      {/* Bottom Floating Query Input (Exact match to Google NotebookLM screenshot) */}
+      {/* Bottom Floating Query Input */}
       <div style={{ padding: '0 20px', width: '100%', maxWidth: '820px', margin: '0 auto' }}>
         <form
           onSubmit={(e) => {
@@ -443,10 +533,16 @@ export default function ChatPanel({
         >
           <input
             type="text"
-            placeholder="Ask a question or create something"
+            placeholder={
+              loading
+                ? 'Generating answer...'
+                : activeSourcesCount > 0
+                ? `Ask a question about ${activeSourcesCount} ${activeSourcesCount === 1 ? 'source' : 'sources'}...`
+                : 'Ask a question or explore this notebook...'
+            }
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            disabled={loading}
+            disabled={loading || !notebookId}
             style={{
               flex: 1,
               background: 'transparent',
@@ -464,23 +560,24 @@ export default function ChatPanel({
               {activeSourcesCount} {activeSourcesCount === 1 ? 'source' : 'sources'}
             </span>
 
-            {/* Circular Send Arrow Button */}
+            {/* Circular Send Button */}
             <button
               type="submit"
-              disabled={!query.trim() || loading}
+              disabled={!query.trim() || loading || !notebookId}
               style={{
                 width: '32px',
                 height: '32px',
                 borderRadius: '50%',
                 border: 'none',
-                backgroundColor: query.trim() && !loading ? 'var(--text-primary)' : 'rgba(255, 255, 255, 0.08)',
-                color: query.trim() && !loading ? '#131314' : 'var(--text-muted)',
+                backgroundColor: query.trim() && !loading && notebookId ? 'var(--text-primary)' : 'rgba(255, 255, 255, 0.08)',
+                color: query.trim() && !loading && notebookId ? '#131314' : 'var(--text-muted)',
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
-                cursor: query.trim() && !loading ? 'pointer' : 'default',
+                cursor: query.trim() && !loading && notebookId ? 'pointer' : 'default',
                 transition: 'all 0.15s ease',
               }}
+              title={loading ? 'Generating...' : 'Send message'}
             >
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
                 <line x1="5" y1="12" x2="19" y2="12" />
@@ -490,7 +587,7 @@ export default function ChatPanel({
           </div>
         </form>
 
-        {/* Disclaimer Footer (Exact match to screenshot) */}
+        {/* Disclaimer Footer */}
         <div
           style={{
             textAlign: 'center',
@@ -500,7 +597,7 @@ export default function ChatPanel({
             userSelect: 'none',
           }}
         >
-          Gemini Notebook can be inaccurate; please double check its responses.
+          ThinkbookLM answers are generated locally by Qwen3 1.7B from your notebook sources.
         </div>
       </div>
     </main>

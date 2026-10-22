@@ -93,6 +93,11 @@ def _build_payload(
         "model": model,
         "messages": formatted_messages,
         "stream": False,
+        # Disable Qwen3's extended thinking/reasoning mode.
+        # When think=True (default), Qwen3 may emit only an internal reasoning
+        # trace with no visible content, causing Ollama to return:
+        # "model output must contain either output text or tool calls"
+        "think": False,
         "options": {
             "temperature": temperature,
         },
