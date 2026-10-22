@@ -6,7 +6,7 @@ from app.models.document import Document, DocumentUploadResult
 from app.models.user import User
 from app.repositories import documents as documents_repo
 from app.repositories import notebooks as notebooks_repo
-from app.services import db, storage
+from app.services import db, storage, vector_store
 from app.services.ingestion import pipeline
 
 router = APIRouter(tags=["documents"])
@@ -82,3 +82,30 @@ def get_document(document_id: int, current_user: User = Depends(get_current_user
         if not document:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Document not found")
         return document
+
+
+@router.delete("/documents/{document_id}", status_code=status.HTTP_200_OK, dependencies=[Depends(verify_csrf)])
+def delete_document(document_id: int, current_user: User = Depends(get_current_user)):
+    """Delete a document, its database records, stored file, and ChromaDB vectors."""
+    pool = db.get_pool()
+    with pool.connection() as conn:
+        document = documents_repo.get_by_id(conn, document_id, user_id=current_user.id)
+        if not document:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Document not found.")
+        stored_filename = documents_repo.get_stored_filename(conn, document_id, user_id=current_user.id)
+
+        # 1. Delete from PostgreSQL (cascades to chunks)
+        documents_repo.delete(conn, document_id, user_id=current_user.id)
+        conn.commit()
+
+    # 2. Delete vectors from ChromaDB
+    try:
+        vector_store.delete_document(document_id)
+    except Exception:
+        pass
+
+    # 3. Delete physical file from disk
+    if stored_filename:
+        storage.delete(stored_filename)
+
+    return {"deleted": True, "document_id": document_id}

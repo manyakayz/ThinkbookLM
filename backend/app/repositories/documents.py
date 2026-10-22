@@ -121,9 +121,14 @@ def mark_failed(conn: Connection, document_id: int, *, error_message: str) -> Do
         return cur.fetchone()
 
 
-def delete(conn: Connection, document_id: int) -> None:
-    """Used to clean up the row if we can't proceed past creation (e.g. disk write failed after insert)."""
-    conn.execute("DELETE FROM documents WHERE id = %s", (document_id,))
+def delete(conn: Connection, document_id: int, user_id: int | None = None) -> bool:
+    """Delete a document row from PostgreSQL."""
+    with conn.cursor() as cur:
+        if user_id is not None:
+            cur.execute("DELETE FROM documents WHERE id = %s AND user_id = %s", (document_id, user_id))
+        else:
+            cur.execute("DELETE FROM documents WHERE id = %s", (document_id,))
+        return cur.rowcount > 0
 
 
 # ---- Indexing state (Milestone 2) ----------------------------------------

@@ -44,6 +44,7 @@ class Settings(BaseSettings):
     # --- Ollama ---
     ollama_base_url: str = "http://localhost:11434"
     ollama_model: str = "qwen3:1.7b"
+    ollama_timeout_seconds: float = 120.0
     # Embedding model (Milestone 2). Must be pulled via `ollama pull <name>`.
     embedding_model: str = "qwen3-embedding:0.6b"
     # Number of chunk texts sent in a single /api/embed batch call. Lowering
@@ -67,6 +68,10 @@ class Settings(BaseSettings):
     # --- Retrieval (Milestone 2) ---
     # Default number of chunks returned per query. Validated at the API layer.
     retrieval_top_k: int = 5
+    # Maximum cosine distance for a retrieved chunk to be considered relevant
+    # for grounding in RAG (0.0 = identical, 1.0 = orthogonal). Chunks with
+    # distance > this threshold are discarded as irrelevant.
+    rag_relevance_threshold: float = 0.60
 
     @property
     def max_upload_size_bytes(self) -> int:

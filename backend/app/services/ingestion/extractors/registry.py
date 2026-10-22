@@ -3,7 +3,7 @@ from pathlib import Path
 from typing import Callable
 
 from app.services.ingestion.extractors import docx_extractor, pdf_extractor, txt_extractor
-from app.services.ingestion.types import ExtractedDocument
+from app.services.ingestion.types import ExtractedDocument, ExtractionError
 
 _EXTRACTORS: dict[str, Callable[[Path, str], ExtractedDocument]] = {
     "txt": txt_extractor.extract,
@@ -16,6 +16,6 @@ def extract(file_type: str, path: Path, source_filename: str) -> ExtractedDocume
     try:
         extractor = _EXTRACTORS[file_type]
     except KeyError as exc:
-        raise ValueError(f"No extractor registered for file type '{file_type}'.") from exc
+        raise ExtractionError(f"No extractor registered for file type '{file_type}'.") from exc
     return extractor(path, source_filename)
 

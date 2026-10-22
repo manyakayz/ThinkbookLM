@@ -5,7 +5,10 @@ from app.services.ingestion.types import ExtractedDocument, ExtractedSection, Ex
 
 
 def extract(path: Path, source_filename: str) -> ExtractedDocument:
-    raw = path.read_bytes()
+    try:
+        raw = path.read_bytes()
+    except Exception as exc:
+        raise ExtractionError(f"Could not read '{source_filename}': {exc}") from exc
 
     try:
         text = raw.decode("utf-8")

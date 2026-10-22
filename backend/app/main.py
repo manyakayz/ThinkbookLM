@@ -21,7 +21,7 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-from app.api.routes import auth, documents, health, notebooks, retrieval
+from app.api.routes import auth, chat, documents, health, notebooks, retrieval
 from app.config import get_settings
 from app.core.logging import configure_logging
 
@@ -58,9 +58,15 @@ async def unhandled_exception_handler(request: Request, exc: Exception):
 app.include_router(auth.router)
 app.include_router(auth.router, prefix="/api")
 app.include_router(health.router)
+app.include_router(health.router, prefix="/api")
 app.include_router(notebooks.router)
+app.include_router(notebooks.router, prefix="/api")
 app.include_router(documents.router)
+app.include_router(documents.router, prefix="/api")
 app.include_router(retrieval.router)
+app.include_router(retrieval.router, prefix="/api")
+app.include_router(chat.router)
+app.include_router(chat.router, prefix="/api")
 
 
 @app.get("/")

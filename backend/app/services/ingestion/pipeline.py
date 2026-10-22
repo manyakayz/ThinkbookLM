@@ -81,8 +81,9 @@ def process_document(document_id: int) -> tuple[Document, int]:
             updated = documents_repo.mark_failed(conn, document_id, error_message=f"Unexpected error: {exc}")
         return updated, 0
 
-    # Chunks + completed status written atomically
+    # Chunks + completed status written atomically (delete any previous chunks for idempotency)
     with pool.connection() as conn:
+        chunks_repo.delete_for_document(conn, document_id)
         chunks_repo.insert_many(conn, document_id, [c.as_dict() for c in chunk_records])
         updated = documents_repo.mark_completed(conn, document_id, page_count=extracted.page_count)
 

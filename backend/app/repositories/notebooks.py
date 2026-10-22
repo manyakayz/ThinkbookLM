@@ -91,3 +91,12 @@ def exists(conn: Connection, notebook_id: int, user_id: int | None = None) -> bo
         else:
             cur.execute("SELECT 1 FROM notebooks WHERE id = %s", (notebook_id,))
         return cur.fetchone() is not None
+
+
+def delete(conn: Connection, notebook_id: int, user_id: int | None = None) -> bool:
+    with conn.cursor() as cur:
+        if user_id is not None:
+            cur.execute("DELETE FROM notebooks WHERE id = %s AND user_id = %s", (notebook_id, user_id))
+        else:
+            cur.execute("DELETE FROM notebooks WHERE id = %s", (notebook_id,))
+        return cur.rowcount > 0

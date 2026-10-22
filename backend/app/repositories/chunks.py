@@ -25,8 +25,14 @@ def insert_many(conn: Connection, document_id: int, chunks: list[dict]) -> int:
             VALUES (%(document_id)s, %(chunk_index)s, %(text)s, %(page_number)s, %(section)s, %(char_start)s, %(char_end)s)
             """,
             [{**c, "document_id": document_id} for c in chunks],
-            prepare=False,
         )
+        return cur.rowcount
+
+
+def delete_for_document(conn: Connection, document_id: int) -> int:
+    """Delete all chunks for a document. Used during document reprocessing."""
+    with conn.cursor() as cur:
+        cur.execute("DELETE FROM chunks WHERE document_id = %s", (document_id,))
         return cur.rowcount
 
 

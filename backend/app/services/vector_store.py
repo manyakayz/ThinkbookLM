@@ -32,23 +32,39 @@ def get_collection(expected_dim: int | None = None) -> Collection:
     ``InvalidDimensionException``.
     """
     client = get_client()
-    collection = client.get_or_create_collection("thinkbook_chunks")
+    collection = client.get_or_create_collection(
+        "thinkbook_chunks",
+        metadata={"hnsw:space": "cosine"},
+    )
 
-    if expected_dim is not None and collection.count() > 0:
-        # Peek at one vector to check its dimension
-        try:
-            sample = collection.peek(limit=1)
-            if sample["embeddings"] and len(sample["embeddings"][0]) != expected_dim:
-                logger.warning(
-                    "ChromaDB collection 'thinkbook_chunks' has dimension %d "
-                    "but embeddings have dimension %d — deleting and recreating.",
-                    len(sample["embeddings"][0]),
-                    expected_dim,
-                )
-                client.delete_collection("thinkbook_chunks")
-                collection = client.get_or_create_collection("thinkbook_chunks")
-        except Exception as exc:
-            logger.warning("Could not validate collection dimension: %s", exc)
+    if expected_dim is not None:
+        current_dim = getattr(getattr(collection, "_model", None), "dimension", None)
+        if current_dim is not None and current_dim != expected_dim:
+            logger.warning(
+                "ChromaDB collection 'thinkbook_chunks' has dimension %d "
+                "but embeddings have dimension %d — deleting and recreating.",
+                current_dim,
+                expected_dim,
+            )
+            client.delete_collection("thinkbook_chunks")
+            collection = client.get_or_create_collection(
+                "thinkbook_chunks",
+                metadata={"hnsw:space": "cosine"},
+            )
+        elif current_dim is None and collection.count() > 0:
+            try:
+                sample = collection.get(include=["embeddings"], limit=1)
+                raw_embeddings = sample.get("embeddings")
+                if raw_embeddings is not None and len(raw_embeddings) > 0:
+                    first_emb = raw_embeddings[0]
+                    if len(first_emb) != expected_dim:
+                        client.delete_collection("thinkbook_chunks")
+                        collection = client.get_or_create_collection(
+                            "thinkbook_chunks",
+                            metadata={"hnsw:space": "cosine"},
+                        )
+            except Exception as exc:
+                logger.warning("Could not validate collection dimension: %s", exc)
 
     return collection
 
@@ -125,7 +141,16 @@ def upsert_chunks(
 
 def delete_document(document_id: int) -> None:
     collection = get_collection()
+    if collection.count() == 0:
+        return
     collection.delete(where={"document_id": document_id})
+
+
+def delete_notebook(notebook_id: int) -> None:
+    collection = get_collection()
+    if collection.count() == 0:
+        return
+    collection.delete(where={"notebook_id": notebook_id})
 
 
 def query(
@@ -135,7 +160,8 @@ def query(
     top_k: int,
     user_id: int | None = None,
 ) -> dict[str, Any]:
-    collection = get_collection()
+    dim = len(embedding) if embedding else None
+    collection = get_collection(expected_dim=dim)
     
     # Fast path for empty collection to avoid ValueError on some chromadb versions
     if collection.count() == 0:
